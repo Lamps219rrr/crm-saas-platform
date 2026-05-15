@@ -1,0 +1,24 @@
+{
+  "name": "crm-saas-platform",
+  "version": "1.0.0",
+  "description": "Enterprise-grade CRM SaaS platform for sales, customer relationships, and business operations",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w frontend\" \"npm run dev -w backend\"",
+    "build": "npm run build -w frontend && npm run build -w backend",
+    "start": "concurrently \"npm start -w frontend\" \"npm start -w backend\"",
+    "test": "npm test -w frontend && npm test -w backend",
+    "lint": "npm run lint -w frontend && npm run lint -w backend",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "db:migrate": "npm run db:migrate -w backend",
+    "db:seed": "npm run db:seed -w backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
