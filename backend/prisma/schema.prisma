@@ -1,0 +1,786 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id                    String      @id @default(cuid())
+  email                 String      @unique
+  password              String?
+  firstName             String?
+  lastName              String?
+  avatar                String?
+  phone                 String?
+  bio                   String?
+  
+  // Authentication
+  emailVerified         Boolean     @default(false)
+  emailVerificationToken String?
+  emailVerificationExpires DateTime?
+  
+  // OAuth
+  googleId              String?     @unique
+  googleAccessToken     String?
+  googleRefreshToken    String?
+  githubId              String?     @unique
+  
+  // Password Reset
+  resetPasswordToken    String?
+  resetPasswordExpires  DateTime?
+  
+  // Status
+  status                UserStatus  @default(ACTIVE)
+  lastLogin             DateTime?
+  lastActivity          DateTime?
+  
+  // Relationships
+  companyId             String
+  company               Company     @relation("CompanyUsers", fields: [companyId], references: [id], onDelete: Cascade)
+  
+  role                  Role        @default(USER)
+  teamId                String?
+  team                  Team?       @relation(fields: [teamId], references: [id])
+  
+  // Data
+  activities            Activity[]
+  tasks                 Task[]      @relation("TaskAssignee")
+  taskCreatedBy         Task[]      @relation("TaskCreatedBy")
+  deals                 Deal[]      @relation("DealOwner")
+  contacts              Contact[]   @relation("ContactOwner")
+  meetings              Meeting[]
+  notes                 Note[]
+  emails                Email[]
+  permissions           Permission[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  deletedAt             DateTime?
+  
+  @@index([companyId])
+  @@index([email])
+  @@index([status])
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+  VIEWER
+}
+
+// ============================================
+// COMPANY & MULTI-TENANCY
+// ============================================
+
+model Company {
+  id                    String      @id @default(cuid())
+  name                  String
+  slug                  String      @unique
+  description           String?
+  logo                  String?
+  website               String?
+  email                 String?
+  phone                 String?
+  address               String?
+  city                  String?
+  state                 String?
+  country               String?
+  zipCode               String?
+  
+  // Billing
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?
+  planType              PlanType    @default(STARTER)
+  billingCycleStart     DateTime?
+  billingCycleEnd       DateTime?
+  
+  // Features
+  features              Json        @default("{}")
+  maxUsers              Int         @default(5)
+  maxContacts           Int         @default(100)
+  apiKey                String?     @unique
+  
+  // Settings
+  timezone              String      @default("UTC")
+  language              String      @default("en")
+  currency              String      @default("USD")
+  dateFormat            String      @default("MM/DD/YYYY")
+  
+  // Status
+  isActive              Boolean     @default(true)
+  isPaid                Boolean     @default(false)
+  trialStartDate        DateTime?
+  trialEndDate          DateTime?
+  
+  // Relationships
+  users                 User[]      @relation("CompanyUsers")
+  teams                 Team[]
+  contacts              Contact[]
+  deals                 Deal[]
+  activities            Activity[]
+  tasks                 Task[]
+  meetings              Meeting[]
+  notes                 Note[]
+  emails                Email[]
+  pipelineStages        PipelineStage[]
+  customFields          CustomField[]
+  workflows             Workflow[]
+  integrations          Integration[]
+  auditLogs             AuditLog[]
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([slug])
+  @@index([isActive])
+}
+
+enum PlanType {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// ============================================
+// TEAMS
+// ============================================
+
+model Team {
+  id                    String      @id @default(cuid())
+  name                  String
+  description           String?
+  avatar                String?
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  members               User[]
+  deals                 Deal[]
+  tasks                 Task[]
+  meetings              Meeting[]
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+}
+
+// ============================================
+// CONTACTS & LEADS
+// ============================================
+
+model Contact {
+  id                    String      @id @default(cuid())
+  email                 String
+  firstName             String
+  lastName              String
+  phoneNumber           String?
+  jobTitle              String?
+  company               String?
+  address               String?
+  city                  String?
+  state                 String?
+  country               String?
+  zipCode               String?
+  website               String?
+  socialLinks           Json        @default("{}")
+  
+  // Relationship
+  companyId             String
+  companyData           Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Ownership
+  ownerId               String
+  owner                 User        @relation("ContactOwner", fields: [ownerId], references: [id])
+  
+  // Classification
+  status                ContactStatus @default(LEAD)
+  rating                Int?        @default(3)
+  tags                  String[]    @default([])
+  customFields          Json        @default("{}")
+  
+  // Associated Data
+  deals                 Deal[]      @relation("DealContacts")
+  activities            Activity[]  @relation("ContactActivities")
+  tasks                 Task[]      @relation("TaskContacts")
+  meetings              Meeting[]   @relation("MeetingContacts")
+  notes                 Note[]      @relation("ContactNotes")
+  emails                Email[]     @relation("EmailContacts")
+  
+  // Engagement
+  lastContactDate       DateTime?
+  lastActivityDate      DateTime?
+  lifecycleStage        LifecycleStage @default(LEAD)
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  deletedAt             DateTime?
+  
+  @@unique([email, companyId])
+  @@index([companyId])
+  @@index([status])
+  @@index([ownerId])
+}
+
+enum ContactStatus {
+  LEAD
+  PROSPECT
+  CUSTOMER
+  INACTIVE
+  ARCHIVED
+}
+
+enum LifecycleStage {
+  SUBSCRIBER
+  LEAD
+  MARKETING_QUALIFIED_LEAD
+  SALES_QUALIFIED_LEAD
+  OPPORTUNITY
+  CUSTOMER
+  EVANGELIST
+}
+
+// ============================================
+// DEALS & SALES PIPELINE
+// ============================================
+
+model Deal {
+  id                    String      @id @default(cuid())
+  name                  String
+  description           String?
+  amount                Decimal     @default(0)
+  currency              String      @default("USD")
+  probability           Int         @default(0) // 0-100%
+  expectedCloseDate     DateTime?
+  closedDate            DateTime?
+  closedWonDate         DateTime?
+  
+  // Relationships
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  stageId               String
+  stage                 PipelineStage @relation("DealStages", fields: [stageId], references: [id])
+  
+  ownerId               String
+  owner                 User        @relation("DealOwner", fields: [ownerId], references: [id])
+  
+  teamId                String?
+  team                  Team?       @relation(fields: [teamId], references: [id])
+  
+  contacts              Contact[]   @relation("DealContacts")
+  
+  // Status
+  status                DealStatus  @default(OPEN)
+  reason                String?     // For lost deals
+  
+  // Activities
+  activities            Activity[]  @relation("DealActivities")
+  tasks                 Task[]      @relation("DealTasks")
+  meetings              Meeting[]   @relation("DealMeetings")
+  notes                 Note[]      @relation("DealNotes")
+  
+  // Custom Fields
+  customFields          Json        @default("{}")
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+  @@index([stageId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+  ON_HOLD
+}
+
+model PipelineStage {
+  id                    String      @id @default(cuid())
+  name                  String
+  position              Int
+  color                 String      @default("#3b82f6")
+  description           String?
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  deals                 Deal[]      @relation("DealStages")
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+// ============================================
+// ACTIVITIES & ENGAGEMENT
+// ============================================
+
+model Activity {
+  id                    String      @id @default(cuid())
+  type                  ActivityType
+  title                 String
+  description           String?
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  userId                String
+  user                  User        @relation(fields: [userId], references: [id])
+  
+  contactId             String?
+  contact               Contact?    @relation("ContactActivities", fields: [contactId], references: [id])
+  
+  dealId                String?
+  deal                  Deal?       @relation("DealActivities", fields: [dealId], references: [id])
+  
+  // Details
+  outcome               String?
+  notes                 String?
+  duration              Int?        // in minutes
+  reminder               DateTime?
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+  @@index([userId])
+  @@index([type])
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  TASK
+  NOTE
+  DEMO
+  PRESENTATION
+  PROPOSAL
+  CONTRACT
+  FEEDBACK
+}
+
+// ============================================
+// TASKS
+// ============================================
+
+model Task {
+  id                    String      @id @default(cuid())
+  title                 String
+  description           String?
+  status                TaskStatus  @default(TODO)
+  priority              TaskPriority @default(MEDIUM)
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  assigneeId            String
+  assignee              User        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  
+  createdById           String
+  createdBy             User        @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  
+  contacts              Contact[]   @relation("TaskContacts")
+  deals                 Deal[]      @relation("DealTasks")
+  
+  dueDate               DateTime?
+  completedAt           DateTime?
+  reminder              DateTime?
+  
+  subtasks              Json        @default("[]")
+  attachments           String[]    @default([])
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+  @@index([assigneeId])
+  @@index([status])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ============================================
+// MEETINGS
+// ============================================
+
+model Meeting {
+  id                    String      @id @default(cuid())
+  title                 String
+  description           String?
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  organizerId           String
+  organizer             User        @relation(fields: [organizerId], references: [id])
+  
+  attendees             User[]      @relation("MeetingAttendees")
+  contacts              Contact[]   @relation("MeetingContacts")
+  deals                 Deal[]      @relation("DealMeetings")
+  
+  startTime             DateTime
+  endTime               DateTime
+  location              String?
+  videoCall             String?     // URL for video call
+  
+  notes                 Note[]      @relation("MeetingNotes")
+  
+  status                MeetingStatus @default(SCHEDULED)
+  outcome               String?
+  
+  attachments           String[]    @default([])
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+  @@index([organizerId])
+  @@index([status])
+}
+
+model MeetingAttendee {
+  id                    String      @id @default(cuid())
+  meetingId             String
+  userId                String
+  user                  User        @relation("MeetingAttendees", fields: [userId], references: [id], onDelete: Cascade)
+  status                AttendeeStatus @default(PENDING)
+  
+  @@unique([meetingId, userId])
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum AttendeeStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+}
+
+// ============================================
+// NOTES
+// ============================================
+
+model Note {
+  id                    String      @id @default(cuid())
+  content               String
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  authorId              String
+  author                User        @relation(fields: [authorId], references: [id])
+  
+  contactId             String?
+  contact               Contact?    @relation("ContactNotes", fields: [contactId], references: [id], onDelete: Cascade)
+  
+  dealId                String?
+  deal                  Deal?       @relation("DealNotes", fields: [dealId], references: [id], onDelete: Cascade)
+  
+  meetingId             String?
+  meeting               Meeting?    @relation("MeetingNotes", fields: [meetingId], references: [id], onDelete: Cascade)
+  
+  isPrivate             Boolean     @default(false)
+  attachments           String[]    @default([])
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+  @@index([authorId])
+}
+
+// ============================================
+// EMAILS
+// ============================================
+
+model Email {
+  id                    String      @id @default(cuid())
+  subject               String
+  body                  String
+  htmlBody              String?
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  fromId                String
+  from                  User        @relation(fields: [fromId], references: [id])
+  
+  toEmail               String
+  contacts              Contact[]   @relation("EmailContacts")
+  
+  status                EmailStatus @default(DRAFT)
+  openedAt              DateTime?
+  clickedAt             DateTime?
+  bounced               Boolean     @default(false)
+  
+  sentAt                DateTime?
+  scheduledAt           DateTime?
+  
+  attachments           String[]    @default([])
+  
+  // Tracking
+  opens                 Int         @default(0)
+  clicks                Int         @default(0)
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+  @@index([fromId])
+  @@index([status])
+}
+
+enum EmailStatus {
+  DRAFT
+  SCHEDULED
+  SENT
+  FAILED
+  BOUNCED
+}
+
+// ============================================
+// CUSTOM FIELDS
+// ============================================
+
+model CustomField {
+  id                    String      @id @default(cuid())
+  name                  String
+  description           String?
+  type                  CustomFieldType
+  required              Boolean     @default(false)
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  entityType            CustomFieldEntity // contact, deal, etc
+  
+  options               Json?       // For select/multiselect
+  defaultValue          String?
+  
+  order                 Int
+  isActive              Boolean     @default(true)
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@unique([companyId, name, entityType])
+  @@index([companyId])
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  EMAIL
+  PHONE
+  DATE
+  SELECT
+  MULTISELECT
+  CHECKBOX
+  TEXTAREA
+  URL
+}
+
+enum CustomFieldEntity {
+  CONTACT
+  DEAL
+  COMPANY
+  TASK
+}
+
+// ============================================
+// WORKFLOWS & AUTOMATION
+// ============================================
+
+model Workflow {
+  id                    String      @id @default(cuid())
+  name                  String
+  description           String?
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  trigger               Json        // Workflow trigger conditions
+  actions               Json[]      // Array of actions to perform
+  conditions            Json[]      // Array of conditions
+  
+  isActive              Boolean     @default(true)
+  executionCount        Int         @default(0)
+  lastExecutedAt        DateTime?
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([companyId])
+}
+
+// ============================================
+// INTEGRATIONS
+// ============================================
+
+model Integration {
+  id                    String      @id @default(cuid())
+  type                  IntegrationType
+  name                  String
+  
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  accessToken           String?
+  refreshToken          String?
+  tokenExpiresAt        DateTime?
+  
+  config                Json        @default("{}")
+  
+  isActive              Boolean     @default(true)
+  lastSyncedAt          DateTime?
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@unique([companyId, type])
+  @@index([companyId])
+}
+
+enum IntegrationType {
+  GOOGLE
+  MICROSOFT
+  SLACK
+  ZAPIER
+  STRIPE
+  MAILCHIMP
+  TWILIO
+  INTERCOM
+  HUBSPOT
+  CUSTOM
+}
+
+// ============================================
+// PERMISSIONS
+// ============================================
+
+model Permission {
+  id                    String      @id @default(cuid())
+  userId                String
+  user                  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  permission            String      // e.g., "contacts.create", "deals.edit"
+  granted               Boolean     @default(true)
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@unique([userId, permission])
+  @@index([userId])
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id                    String      @id @default(cuid())
+  userId                String
+  user                  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type                  NotificationType
+  title                 String
+  message               String
+  data                  Json?       @default("{}")
+  
+  read                  Boolean     @default(false)
+  readAt                DateTime?
+  
+  createdAt             DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([read])
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_COMPLETED
+  DEAL_UPDATED
+  CONTACT_ADDED
+  MEETING_REMINDER
+  TEAM_INVITATION
+  COMMENT_MENTION
+  SYSTEM
+}
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+model AuditLog {
+  id                    String      @id @default(cuid())
+  companyId             String
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  userId                String
+  user                  User        @relation(fields: [userId], references: [id])
+  
+  action                String      // e.g., "created", "updated", "deleted"
+  entityType            String      // e.g., "Contact", "Deal"
+  entityId              String
+  
+  oldValues             Json?       @default("{}")
+  newValues             Json?       @default("{}")
+  changes               Json?       @default("{}")
+  
+  ipAddress             String?
+  userAgent             String?
+  
+  createdAt             DateTime    @default(now())
+  
+  @@index([companyId])
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+}
